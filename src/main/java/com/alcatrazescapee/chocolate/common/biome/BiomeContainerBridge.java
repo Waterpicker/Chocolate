@@ -7,16 +7,16 @@ package com.alcatrazescapee.chocolate.common.biome;
 
 import net.minecraft.util.registry.Registry;
 import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeContainer;
+import net.minecraft.world.biome.source.BiomeArray;
 
 /**
- * Bridge interface for {@link net.minecraft.world.biome.BiomeContainer}, implemented by mixin
+ * Bridge interface for {@link BiomeArray}, implemented by mixin
  *
  * Implements two slightly modified accessors
  */
 public interface BiomeContainerBridge
 {
-    static BiomeContainerBridge of(BiomeContainer container)
+    static BiomeContainerBridge of(BiomeArray container)
     {
         return (BiomeContainerBridge) container;
     }

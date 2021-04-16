@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "chocolate",
+  "version": "fabric-1.0.0",
+
+  "name": "Chocolate",
+  "description": "*Vanilla is good - but chocolate is better. ;)*\n\n    This mod exists to fix vanilla bugs - mostly to do with custom world generation - which have a much larger impact on modded.\n",
+  "authors": [
+    "AlcatrazEscapee"
+  ],
+  "contact": {
+    "homepage": "https://fabricmc.net/",
+    "sources": "https://github.com/FabricMC/fabric-example-mod"
+  },
+
+  "license": "MIT",
+
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.alcatrazescapee.chocolate.Chocolate"
+    ]
+  },
+  "mixins": [
+    "chocolate.mixins.json"
+  ],
+  "accessWidener": "chocolate.accesswidener",
+  "depends": {
+    "fabricloader": ">=0.7.4",
+    "fabric": "*"
+  },
+  "suggests": {
+    "another-mod": "*"
+  }
+}

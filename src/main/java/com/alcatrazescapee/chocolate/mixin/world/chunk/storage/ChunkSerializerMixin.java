@@ -5,22 +5,24 @@
 
 package com.alcatrazescapee.chocolate.mixin.world.chunk.storage;
 
-import javax.annotation.Nullable;
-
-import net.minecraft.nbt.CompoundNBT;
-import net.minecraft.util.IObjectIntIterable;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.structure.StructureManager;
+import net.minecraft.util.collection.IndexedIterable;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.registry.Registry;
-import net.minecraft.village.PointOfInterestManager;
+import net.minecraft.world.ChunkSerializer;
+import net.minecraft.world.HeightLimitView;
+import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeContainer;
-import net.minecraft.world.biome.provider.BiomeProvider;
-import net.minecraft.world.chunk.IChunk;
-import net.minecraft.world.chunk.storage.ChunkSerializer;
-import net.minecraft.world.gen.feature.template.TemplateManager;
-import net.minecraft.world.server.ServerWorld;
+import net.minecraft.world.biome.source.BiomeArray;
+import net.minecraft.world.biome.source.BiomeSource;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.ProtoChunk;
+import net.minecraft.world.poi.PointOfInterestStorage;
 
 import com.alcatrazescapee.chocolate.common.biome.BiomeContainerSerializer;
+import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -28,24 +30,31 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Hooks for advanced {@link BiomeContainer} serialization
+ * Hooks for advanced {@link BiomeArray} serialization
  *
  * @see BiomeContainerSerializer
  */
 @Mixin(ChunkSerializer.class)
-public abstract class ChunkSerializerMixin
-{
-    @Redirect(method = "read", at = @At(value = "NEW", target = "net/minecraft/world/biome/BiomeContainer"))
-    private static BiomeContainer redirect$read$newBiomeContainer(IObjectIntIterable<Biome> biomeRegistry, ChunkPos chunkPos, BiomeProvider biomeProvider, @Nullable int[] biomeData, ServerWorld worldIn, TemplateManager templateManagerIn, PointOfInterestManager poiManager, ChunkPos unused, CompoundNBT rootNbt)
-    {
-        final CompoundNBT levelNbt = rootNbt.getCompound("Level");
-        return BiomeContainerSerializer.read(worldIn.registryAccess().registryOrThrow(Registry.BIOME_REGISTRY), chunkPos, biomeProvider, biomeData, levelNbt);
+public abstract class ChunkSerializerMixin {
+    private static NbtCompound rootNbt;
+
+    @Redirect(method = "deserialize", at = @At(value = "NEW", target = "net/minecraft/world/biome/source/BiomeArray"))
+    private static BiomeArray redirect$read$newBiomeContainer(IndexedIterable<Biome> indexedIterable, HeightLimitView world, ChunkPos chunkPos, BiomeSource biomeSource, @Nullable int[] ids) {
+        World worldIn = (World) world;
+
+        final NbtCompound levelNbt = rootNbt.getCompound("Level");
+        return BiomeContainerSerializer.read(worldIn.getRegistryManager().get(Registry.BIOME_KEY), chunkPos, biomeSource, ids, levelNbt, worldIn);
     }
 
-    @Inject(method = "write", at = @At("RETURN"))
-    private static void inject$write(ServerWorld worldIn, IChunk chunkIn, CallbackInfoReturnable<CompoundNBT> cir)
+    @Inject(method = "deserialize", at = @At("HEAD"))
+    private static void inject$read(ServerWorld world, StructureManager structureManager, PointOfInterestStorage poiStorage, ChunkPos pos, NbtCompound nbt, CallbackInfoReturnable<ProtoChunk> cir) {
+        rootNbt = nbt;
+    }
+
+    @Inject(method = "serialize", at = @At("RETURN"))
+    private static void inject$write(ServerWorld worldIn, Chunk chunkIn, CallbackInfoReturnable<NbtCompound> cir)
     {
-        final CompoundNBT levelNbt = cir.getReturnValue().getCompound("Level");
-        BiomeContainerSerializer.write(chunkIn.getBiomes(), levelNbt);
+        final NbtCompound levelNbt = cir.getReturnValue().getCompound("Level");
+        BiomeContainerSerializer.write(chunkIn.getBiomeArray(), levelNbt);
     }
 }

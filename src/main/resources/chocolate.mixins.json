@@ -5,8 +5,6 @@
   "compatibilityLevel": "JAVA_8",
   "mixins": [
     "world.biome.BiomeContainerMixin",
-    "world.biome.BiomeMixin",
-    "world.biome.BiomeRegistryMixin",
     "world.chunk.storage.ChunkSerializerMixin"
   ],
   "client": [

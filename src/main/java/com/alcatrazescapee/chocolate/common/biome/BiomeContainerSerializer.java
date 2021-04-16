@@ -5,29 +5,36 @@
 
 package com.alcatrazescapee.chocolate.common.biome;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
-import javax.annotation.Nullable;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import net.minecraft.nbt.CompoundNBT;
-import net.minecraft.nbt.ListNBT;
-import net.minecraft.nbt.StringNBT;
-import net.minecraft.util.RegistryKey;
-import net.minecraft.util.ResourceLocation;
+
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtString;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.registry.Registry;
+import net.minecraft.util.registry.RegistryKey;
+import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeContainer;
-import net.minecraft.world.biome.provider.BiomeProvider;
-import net.minecraftforge.common.util.Constants;
+import net.minecraft.world.biome.source.BiomeArray;
+import net.minecraft.world.biome.source.BiomeSource;
 
 import com.alcatrazescapee.chocolate.common.ChocolateConfig;
 import com.alcatrazescapee.chocolate.common.Debug;
+import net.fabricmc.fabric.api.util.NbtType;
+import org.jetbrains.annotations.Nullable;
 
 /**
- * Advanced {@link BiomeContainer} serialization, which stores an additional palette to chunk data.
+ * Advanced {@link BiomeArray} serialization, which stores an additional palette to chunk data.
  */
 public final class BiomeContainerSerializer
 {
@@ -39,23 +46,23 @@ public final class BiomeContainerSerializer
 
     private static final Logger LOGGER = LogManager.getLogger();
 
-    public static BiomeContainer read(Registry<Biome> biomeRegistry, ChunkPos pos, BiomeProvider biomeProvider, @Nullable int[] biomeData, CompoundNBT nbt)
+    public static BiomeArray read(Registry<Biome> biomeRegistry, ChunkPos pos, BiomeSource biomeProvider, @Nullable int[] biomeData, NbtCompound nbt, World world)
     {
-        if (biomeData != null && nbt.contains(PALETTE_KEY, Constants.NBT.TAG_COMPOUND) && Debug.ENABLE_BIOME_FIXES)
+        if (biomeData != null && nbt.contains(PALETTE_KEY, NbtType.COMPOUND) && Debug.ENABLE_BIOME_FIXES)
         {
             // Read and apply additional palette data
-            final CompoundNBT paletteNbt = nbt.getCompound(PALETTE_KEY);
-            final ListNBT keysNbt = paletteNbt.getList(KEYS_KEY, Constants.NBT.TAG_STRING);
+            final NbtCompound paletteNbt = nbt.getCompound(PALETTE_KEY);
+            final NbtList keysNbt = paletteNbt.getList(KEYS_KEY, NbtType.STRING);
             final int[] savedIds = paletteNbt.getIntArray(IDS_KEY);
             final int[] actualIds = new int[savedIds.length];
-            final List<ResourceLocation> missingBiomeNames = new ArrayList<>();
+            final List<Identifier> missingBiomeNames = new ArrayList<>();
             for (int i = 0; i < keysNbt.size(); i++)
             {
-                final ResourceLocation key = new ResourceLocation(keysNbt.getString(i));
+                final Identifier key = new Identifier(keysNbt.getString(i));
                 final Biome biome = biomeRegistry.get(key);
                 if (biome != null)
                 {
-                    actualIds[i] = biomeRegistry.getId(biome);
+                    actualIds[i] = biomeRegistry.getRawId(biome);
                 }
                 else
                 {
@@ -64,11 +71,11 @@ public final class BiomeContainerSerializer
                 }
             }
 
-            final ChocolateConfig.Severity actionOnMissingBiomes = ChocolateConfig.SERVER.onBiomesRemovedFromChunks.get();
+            final ChocolateConfig.Severity actionOnMissingBiomes = ChocolateConfig.Severity.LOG; //ChocolateConfig.SERVER.onBiomesRemovedFromChunks.get();
             if (!missingBiomeNames.isEmpty() && actionOnMissingBiomes != ChocolateConfig.Severity.NONE)
             {
                 // There will be missing biomes from the world! This is likely due to removing biomes
-                LOGGER.error("There are biomes in the chunk which are missing from the world! These will be defaulted: " + missingBiomeNames.stream().map(ResourceLocation::toString).collect(Collectors.joining(", ")));
+                LOGGER.error("There are biomes in the chunk which are missing from the world! These will be defaulted: " + missingBiomeNames.stream().map(Identifier::toString).collect(Collectors.joining(", ")));
                 if (actionOnMissingBiomes == ChocolateConfig.Severity.THROW)
                 {
                     throw new IllegalStateException("Chocolate threw this error according to the config setting onBiomesRemovedFromChunks = THROW. If reporting this, include the full log as it contains the actual text of the error!");
@@ -97,7 +104,7 @@ public final class BiomeContainerSerializer
                 }
             }
 
-            final ChocolateConfig.Severity actionOnMissingIds = ChocolateConfig.SERVER.onIdsMissingFromPalette.get();
+            final ChocolateConfig.Severity actionOnMissingIds = ChocolateConfig.Severity.LOG; // = ChocolateConfig.SERVER.onIdsMissingFromPalette.get();
             if (!missingIds.isEmpty() && actionOnMissingIds != ChocolateConfig.Severity.NONE)
             {
                 // This should never happen, it means somehow the serialization contract was broken
@@ -111,39 +118,43 @@ public final class BiomeContainerSerializer
                 }
             }
         }
-        return new BiomeContainer(biomeRegistry, pos, biomeProvider, biomeData);
+        return new BiomeArray(biomeRegistry, world, pos, biomeProvider, biomeData);
     }
 
     /**
      * Writes a biome container's palette information to the specified nbt tag
-     * At this point, the biome container's {@link BiomeContainer#writeBiomes()} method has already been invoked (which is going to invoke the mixin modified version.
+     * At this point, the biome container's {@link BiomeArray#toIntArray()} method has already been invoked (which is going to invoke the mixin modified version.
      * Under that assumption, every biome that is written as an int ID will have serialized itself as biome -(bridge)-> key -(registry)-> biome -(registry)-> int ID
      * We are then free to assume this process will hold for all biomes found in the biome container at this point
      *
      * @param biomeContainer The biome container
      * @param nbt            The nbt to put extra palette data onto
      */
-    public static void write(@Nullable BiomeContainer biomeContainer, CompoundNBT nbt)
+    public static void write(@Nullable BiomeArray biomeContainer, NbtCompound nbt)
     {
         if (biomeContainer != null && nbt.contains(BIOMES_KEY) && Debug.ENABLE_BIOME_FIXES)
         {
             // Write additional palette data
-            final CompoundNBT paletteNbt = new CompoundNBT();
+            final NbtCompound paletteNbt = new NbtCompound();
             final Registry<Biome> biomeRegistry = ((BiomeContainerBridge) biomeContainer).bridge$getActualBiomeRegistry();
             final Biome[] uniqueBiomes = Arrays.stream(((BiomeContainerBridge) biomeContainer).bridge$getInternalBiomeArray())
                 .distinct()
                 .toArray(Biome[]::new);
             final int[] ids = new int[uniqueBiomes.length];
-            final ListNBT keysNbt = new ListNBT();
+            final NbtList keysNbt = new NbtList();
 
             // This is free of any checks as they have already been performed in BiomeContainer#writeBiomes
-            for (int i = 0; i < uniqueBiomes.length; i++)
-            {
+            for (int i = 0; i < uniqueBiomes.length; i++) {
                 // Use the key on each biome and compute an ID mapping
                 final Biome biome = uniqueBiomes[i];
-                final RegistryKey<Biome> key = BiomeBridge.of(biome).bridge$getKey();
-                keysNbt.add(StringNBT.valueOf(key.location().toString()));
-                ids[i] = biomeRegistry.getId(biomeRegistry.get(key));
+                final Optional<RegistryKey<Biome>> key = ((BiomeContainerBridge) biomeContainer).bridge$getActualBiomeRegistry().getKey(biome);
+
+                if (key.isPresent()) {
+                    keysNbt.add(NbtString.of(key.get().getValue().toString()));
+                     ids[i] = biomeRegistry.getRawId(biomeRegistry.get(key.get()));
+                } else {
+                    System.out.println("It went crab.");
+                }
             }
 
             paletteNbt.putIntArray(IDS_KEY, ids);
